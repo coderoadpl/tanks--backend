@@ -4,6 +4,8 @@ import cors from 'cors'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import { createGameRepository } from './gameRepository'
+import { createGameService } from './gameService'
+import { createPlayerService } from './playerService'
 
 dotenv.config()
 
@@ -13,12 +15,18 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
+const httpServer = createServer(app)
+const io = new Server(httpServer, { cors: { origin: '*' } })
+
 const gameRepository = createGameRepository()
+const playerService = createPlayerService()
+const gameService = createGameService({ io, gameRepository, playerService })
 
 app.post('/new', (req, res) => {
-  const connectionId = req.body.connectionId
-  const gameId = gameRepository.createNewGame({ players: [connectionId] })
-  res.json({ gameId })
+  const connectionId = req.body.connectionId as string
+  const game = gameService.createNewGame({ startingPlayerConnectionId: connectionId })
+  gameService.emitBoardChangedEvent(game.id)
+  res.json({ gameId: game.id })
 })
 
 app.post('/join', (req, res) => {
@@ -38,15 +46,11 @@ app.post('/join', (req, res) => {
     res.status(403).json({ error: 'This game is full, start a new one!' })
     return
   }
-  gameRepository.updateGame(gameId, {
-    players: game.players.concat(connectionId)
-  })
+  gameService.addPlayerToTheGame({ gameId, playerId: connectionId })
+  gameService.emitBoardChangedEvent(gameId)
 
   res.json({ gameId })
 })
-
-const httpServer = createServer(app)
-const io = new Server(httpServer, { cors: { origin: '*' } })
 
 io.on('connection', (socket) => {
   console.log('connection')

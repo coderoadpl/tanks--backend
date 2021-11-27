@@ -1,25 +1,22 @@
-export type Game = {
-  players: string[]
-}
+import { Game, Store } from './types'
 
-const store = {
+const store: Store = {
   nextGameId: 0,
-  games: [] as Game[]
+  games: []
 }
 
 export const createGameRepository = () => {
   return {
-    createNewGame (newGame: Game) {
+    createNewGame (newGame: Omit<Game, 'id'>): Game {
       const gameId = store.nextGameId
       store.nextGameId = store.nextGameId + 1
-      store.games[gameId] = newGame
-      console.log(store.games)
-      return gameId
+      store.games[gameId] = { ...newGame, id: gameId }
+      return store.games[gameId]
     },
     getGame (gameId: number) {
       const game = store.games[gameId]
       console.log(store.games)
-      return game
+      return { ...game, id: gameId }
     },
     updateGame: (gameId: number, updateBody: Partial<Game>) => {
       const updatedGame = {
@@ -32,3 +29,5 @@ export const createGameRepository = () => {
     }
   }
 }
+
+export type GameRepository = ReturnType<typeof createGameRepository>
