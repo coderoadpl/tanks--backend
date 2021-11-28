@@ -9,7 +9,7 @@ import { createPlayerService } from './playerService'
 
 dotenv.config()
 
-const PORT = process.env.PORT || 3000
+const PORT = Number(process.env.PORT) || 3000
 
 const app = express()
 app.use(cors())
@@ -25,7 +25,7 @@ const gameService = createGameService({ io, gameRepository, playerService })
 app.post('/new', (req, res) => {
   const connectionId = req.body.connectionId as string
   const game = gameService.createNewGame({ startingPlayerConnectionId: connectionId })
-  gameService.emitBoardChangedEvent(game.id)
+  gameService.emitBoardChangedEvent({ gameId: game.id })
   res.json({ gameId: game.id })
 })
 
@@ -47,7 +47,7 @@ app.post('/join', (req, res) => {
     return
   }
   gameService.addPlayerToTheGame({ gameId, playerId: connectionId })
-  gameService.emitBoardChangedEvent(gameId)
+  gameService.emitBoardChangedEvent({ gameId })
 
   res.json({ gameId })
 })

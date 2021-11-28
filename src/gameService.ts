@@ -6,8 +6,6 @@ import * as geometric from 'geometric'
 import type { Line, Polygon, Point } from 'geometric'
 import { degToRad, round2Points } from './utils'
 
-const gameBoardSize = Number(process.env.GAME_BOARD_SIZE) || 500
-
 const transformGameObjectToPolygon = (object: GameObject): Polygon => {
   const topLeft: Point = [object.left, object.top]
   const topRight: Point = [object.left + object.width, object.top]
@@ -27,17 +25,31 @@ const transformGameObjectToPolygon = (object: GameObject): Polygon => {
 }
 
 export const createGameService = ({ io, gameRepository, playerService }:{ io: Server, gameRepository: GameRepository, playerService: PlayerService }) => {
+  const gameBoardSize = Number(process.env.GAME_BOARD_SIZE) || 500
+  const gameTime = 0
+  const gameEndTime = Number(process.env.GAME_DURATION) || 30000
+  const gameTickInterval = Number(process.env.GAME_TICK_INTERVAL) || 50
+
   return {
     startGameClock ({ gameId }: { gameId: number }) {
-      // @TODO end game
-      const clockId = setInterval(() => this.processGameTick({ gameId }), Number(process.env.GAME_TICK_INTERVAL) || 50)
+      const clockId = setInterval(() => this.processGameTick({ gameId }), gameTickInterval)
       return clockId
+    },
+    clearGameClock ({ gameId }: { gameId: number }) {
+      const game = this.getGame(gameId)
+      const clockId = game.clockId
+      if (clockId) clearInterval(clockId)
     },
     processGameTick ({ gameId }: { gameId: number }) {
       this.clearFiringStates(gameId)
       this.processMovements(gameId)
-      this.processDamages(gameId)
-      this.emitBoardChangedEvent(gameId)
+      const { shouldEnd: shouldEndByDamages } = this.processDamages(gameId)
+      const { shouldEnd: shouldEndByTime } = this.processGameTime({ gameId })
+      this.emitBoardChangedEvent({ gameId })
+      if (shouldEndByDamages || shouldEndByTime) {
+        this.emitGameEndedEvent({ gameId })
+        this.clearGameClock({ gameId })
+      }
     },
     createNewGame ({ startingPlayerConnectionId }: { startingPlayerConnectionId: string }) {
       const newGame = gameRepository.createNewGame({
@@ -48,6 +60,8 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
             x: gameBoardSize,
             y: gameBoardSize
           },
+          time: gameTime,
+          endTime: gameEndTime,
           objects: [playerService.makePlayer({
             playerId: startingPlayerConnectionId,
             top: playerInvariantProperties.width / 2,
@@ -93,6 +107,15 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         }
       })
     },
+    increaseGameTime ({ gameId }: { gameId: number}) {
+      const game = this.getGame(gameId)
+      return gameRepository.updateGame(gameId, {
+        board: {
+          ...game.board,
+          time: game.board.time + gameTickInterval
+        }
+      })
+    },
     saveNextPlayerAction ({ playerId, action }: { playerId: string, action: PlayerAction }) {
       const game = gameRepository.getGameByPlayerId(playerId)
       if (!game) return
@@ -115,11 +138,18 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         }
       })
     },
-    emitBoardChangedEvent (gameId: number) {
+    emitBoardChangedEvent ({ gameId }: { gameId: number }) {
       const game = this.getGame(gameId)
       game.players.forEach((playerId) => {
         const playerSocket = io.sockets.sockets.get(playerId)
         if (playerSocket) playerSocket.emit('BOARD_CHANGED', game.board)
+      })
+    },
+    emitGameEndedEvent ({ gameId }: { gameId: number }) {
+      const game = this.getGame(gameId)
+      game.players.forEach((playerId) => {
+        const playerSocket = io.sockets.sockets.get(playerId)
+        if (playerSocket) playerSocket.emit('GAME_ENDED')
       })
     },
     handlePlayerAction ({ playerId, action }: { playerId: string, action: PlayerAction }) {
@@ -137,6 +167,14 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         updatedPlayer: { ...player, isFiring: false },
         gameId
       }))
+    },
+    processGameTime ({ gameId }: { gameId: number }) {
+      this.increaseGameTime({ gameId })
+      const game = this.getGame(gameId)
+      if (game.board.time >= game.board.endTime) {
+        return { shouldEnd: true }
+      }
+      return { shouldEnd: false }
     },
     processMovements (gameId: number) {
       const game = this.getGame(gameId)
@@ -175,9 +213,9 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         return [shootStartPoint, shootTargetPoint]
       })
 
-      if (shootTrajectories.length === 0) return
+      if (shootTrajectories.length === 0) return { shouldEnd: false }
 
-      const playersAfterShoots = players.reduce((r, player) => {
+      const damagedPlayers = players.reduce((r, player) => {
         const playerPolygon = transformGameObjectToPolygon(player)
         const matchedShootTrajectories = shootTrajectories.filter((shootTrajectory) => geometric.lineIntersectsPolygon(shootTrajectory, playerPolygon))
         if (matchedShootTrajectories.length === 0) return r
@@ -187,7 +225,13 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         })
       }, [] as Player[])
 
-      playersAfterShoots.forEach((playerAfterShoot) => this.updatePlayerOnBoard({ updatedPlayer: playerAfterShoot, gameId }))
+      damagedPlayers.forEach((playerAfterShoot) => this.updatePlayerOnBoard({ updatedPlayer: playerAfterShoot, gameId }))
+
+      const deadPlayers = damagedPlayers.filter((damagedPlayer) => damagedPlayer.hp <= 0)
+      const alivePlayersNumber = players.length - deadPlayers.length
+      const isOnePlayerLeft = alivePlayersNumber === 1
+
+      return { shouldEnd: isOnePlayerLeft }
     },
     checkIfObjectsCollisions (gameId: number): boolean {
       const game = this.getGame(gameId)

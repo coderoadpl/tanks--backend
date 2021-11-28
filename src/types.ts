@@ -28,7 +28,9 @@ export type Game = {
     dimensions: {
       x: number,
       y: number
-    }
+    },
+    time: number,
+    endTime: number,
     objects: GameObject[]
   },
 }
