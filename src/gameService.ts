@@ -31,7 +31,7 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
             x: 500,
             y: 500
           },
-          objects: [playerService.makePlayer({ playerId: startingPlayerConnectionId, top: 0, left: 0 })]
+          objects: [playerService.makePlayer({ playerId: startingPlayerConnectionId, top: 0, left: 0, rotation: 90 })]
         }
       })
       const clockId = this.startGameClock({ gameId: newGame.id })
@@ -52,6 +52,7 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
           ...game.board,
           objects: game.board.objects.concat(playerService.makePlayer({
             playerId,
+            rotation: 0,
             top: game.board.dimensions.y - playerInvariantProperties.height,
             left: game.board.dimensions.x - playerInvariantProperties.width
           }))
