@@ -2,14 +2,17 @@ export type PlayerActionEventName = 'keyup' | 'keydown'
 export type PlayerActionEventKey = 'ArrowDown' | 'ArrowUp' | 'ArrowLeft' | 'ArrowRight' | 'Space'
 export type PlayerAction = { key: PlayerActionEventKey, eventName: PlayerActionEventName }
 
-export type Player = {
-  type: 'player',
+type GameObjectBase = {
   id: string,
   top: number,
   left: number,
   width: number,
   height: number,
   rotation: number,
+}
+
+export type Player = GameObjectBase & {
+  type: 'player',
   hp: number,
   isFiring: boolean
 }

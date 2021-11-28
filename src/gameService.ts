@@ -1,7 +1,29 @@
 import { GameRepository } from './gameRepository'
 import { playerInvariantProperties, PlayerService } from './playerService'
-import { Game, Player, PlayerAction } from './types'
+import { Game, GameObject, Player, PlayerAction } from './types'
 import { Server } from 'socket.io'
+import * as geometric from 'geometric'
+import type { Line, Polygon, Point } from 'geometric'
+
+const gameBoardSize = Number(process.env.GAME_BOARD_SIZE) || 500
+
+const transformGameObjectToPolygon = (object: GameObject): Polygon => {
+  const topLeft: Point = [object.top, object.left]
+  const bottomLeft: Point = [object.top + object.height, object.left]
+  const topRight: Point = [object.top, object.left + object.width]
+  const bottomRight: Point = [object.top + object.height, object.left + object.width]
+  const diagonalLine: Line = [topLeft, bottomRight]
+
+  const coordinates: Polygon = [
+    topLeft,
+    bottomLeft,
+    topRight,
+    bottomRight
+  ]
+
+  const midpoint = geometric.lineMidpoint(diagonalLine)
+  return geometric.polygonRotate(coordinates, object.rotation, midpoint)
+}
 
 export const createGameService = ({ io, gameRepository, playerService }:{ io: Server, gameRepository: GameRepository, playerService: PlayerService }) => {
   return {
@@ -16,8 +38,10 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         const player = game.board.objects.find((object) => object.id === playerId)
         if (!nextAction || !player) return
         const updatedPlayer = playerService.processPlayerAction({ player, action: nextAction })
-        // todo check collisions
         this.updatePlayerOnBoard({ updatedPlayer, gameId })
+        const collisionExistAfterUpdate = this.checkIfObjectsCollide(gameId)
+        // revert if collisions exists
+        if (collisionExistAfterUpdate) this.updatePlayerOnBoard({ updatedPlayer: player, gameId })
         this.removeNextPlayerAction({ playerId })
         this.emitBoardChangedEvent(gameId)
       })
@@ -28,10 +52,15 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         nextPlayersAction: {},
         board: {
           dimensions: {
-            x: 500,
-            y: 500
+            x: gameBoardSize,
+            y: gameBoardSize
           },
-          objects: [playerService.makePlayer({ playerId: startingPlayerConnectionId, top: 0, left: 0, rotation: 90 })]
+          objects: [playerService.makePlayer({
+            playerId: startingPlayerConnectionId,
+            top: playerInvariantProperties.width / 2,
+            left: playerInvariantProperties.height / 2,
+            rotation: 180
+          })]
         }
       })
       const clockId = this.startGameClock({ gameId: newGame.id })
@@ -53,8 +82,8 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
           objects: game.board.objects.concat(playerService.makePlayer({
             playerId,
             rotation: 0,
-            top: game.board.dimensions.y - playerInvariantProperties.height,
-            left: game.board.dimensions.x - playerInvariantProperties.width
+            top: game.board.dimensions.y - playerInvariantProperties.height - playerInvariantProperties.width / 2,
+            left: game.board.dimensions.x - playerInvariantProperties.width - playerInvariantProperties.height / 2
           }))
         }
       })
@@ -106,9 +135,47 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
       if (action.eventName === 'keydown') {
         this.saveNextPlayerAction({ playerId, action })
       }
-      // if (action.eventName === 'keyup') {
-      //   this.removeNextPlayerAction({ playerId })
-      // }
+    },
+    checkIfObjectsCollide (gameId: number): boolean {
+      const game = this.getGame(gameId)
+
+      // lines are moved 1px to not provide intersections when object is on the edge of board
+      const borderLeft: Line = [[-1, -1], [-1, gameBoardSize + 1]]
+      const borderTop: Line = [[-1, -1], [gameBoardSize + 1, -1]]
+      const borderRight: Line = [[gameBoardSize + 1, -1], [gameBoardSize + 1, gameBoardSize + 1]]
+      const borderBottom: Line = [[-1, gameBoardSize + 1], [gameBoardSize + 1, gameBoardSize + 1]]
+
+      const players = game.board.objects.filter((object) => object.type === 'player')
+      const playersPolygons = players.map(transformGameObjectToPolygon)
+
+      let isIntersecting = false
+
+      for (let i = 0; i < players.length; i++) {
+        // first intersection found do the trick
+        if (isIntersecting) break
+
+        const player = players[i]
+        const otherPlayers = players.filter((otherPlayer) => otherPlayer.id !== player.id)
+        const otherPlayersPolygons = otherPlayers.map(transformGameObjectToPolygon)
+        const playerPolygon = playersPolygons[i]
+        if (
+          geometric.lineIntersectsPolygon(borderLeft, playerPolygon) ||
+          geometric.lineIntersectsPolygon(borderTop, playerPolygon) ||
+          geometric.lineIntersectsPolygon(borderRight, playerPolygon) ||
+          geometric.lineIntersectsPolygon(borderBottom, playerPolygon)
+        ) {
+          isIntersecting = true
+          break
+        }
+
+        otherPlayersPolygons.forEach((otherPlayerPolygon) => {
+          if (geometric.polygonIntersectsPolygon(playerPolygon, otherPlayerPolygon)) {
+            isIntersecting = true
+          }
+        })
+      }
+
+      return isIntersecting
     }
   }
 }
