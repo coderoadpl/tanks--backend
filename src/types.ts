@@ -1,3 +1,7 @@
+export type PlayerActionEventName = 'keyup' | 'keydown'
+export type PlayerActionEventKey = 'ArrowDown' | 'ArrowUp' | 'ArrowLeft' | 'ArrowRight' | 'Space'
+export type PlayerAction = { key: PlayerActionEventKey, eventName: PlayerActionEventName }
+
 export type Player = {
   type: 'player',
   id: string,
@@ -7,13 +11,16 @@ export type Player = {
   height: number,
   rotation: number,
   hp: number,
+  isFiring: boolean
 }
 
 export type GameObject = Player
 
 export type Game = {
   id: number,
-  players: string[]
+  clockId?: NodeJS.Timer,
+  players: string[],
+  nextPlayersAction: Record<string, PlayerAction | null>,
   board: {
     dimensions: {
       x: number,

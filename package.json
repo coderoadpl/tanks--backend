@@ -11,7 +11,8 @@
     "lint": "eslint --ext .js,.jsx,.ts,.tsx",
     "fix": "eslint --fix --ext .js,.jsx,.ts,.tsx",
     "test": "jest",
-    "test:dev": "jest --watchAll"
+    "test:dev": "jest --watchAll",
+    "dev:debug": "node --inspect-brk node_modules/.bin/nodemon"
   },
   "author": "",
   "license": "ISC",

@@ -18,7 +18,7 @@ export const createGameRepository = () => {
       console.log(store.games)
       return { ...game, id: gameId }
     },
-    updateGame: (gameId: number, updateBody: Partial<Game>) => {
+    updateGame (gameId: number, updateBody: Partial<Game>) {
       const updatedGame = {
         ...store.games[gameId],
         ...updateBody
@@ -26,6 +26,9 @@ export const createGameRepository = () => {
       store.games[gameId] = updatedGame
       console.log(store.games)
       return updatedGame
+    },
+    getGameByPlayerId (playerId: string) {
+      return store.games.find((game) => game.players.includes(playerId))
     }
   }
 }

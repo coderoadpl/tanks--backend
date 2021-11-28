@@ -53,7 +53,11 @@ app.post('/join', (req, res) => {
 })
 
 io.on('connection', (socket) => {
-  console.log('connection')
+  const connectionId = socket.id
+  console.log(`New connection with id ${connectionId}`)
+  socket.on('PLAYER_ACTION', ({ key, eventName }) => {
+    gameService.handlePlayerAction({ playerId: connectionId, action: { key, eventName } })
+  })
 })
 
 httpServer.listen(PORT, () => {
