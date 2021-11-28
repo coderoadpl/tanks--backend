@@ -1,4 +1,5 @@
 import { Player, PlayerAction } from './types'
+import { degToRad, round2Points } from './utils'
 
 export const playerInvariantProperties = {
   type: 'player' as const,
@@ -6,9 +7,6 @@ export const playerInvariantProperties = {
   height: 40,
   hp: 1
 }
-
-const degToRad = (deg: number): number => deg * Math.PI / 180
-const round2Points = (num: number) => Math.round(num * 100) / 100
 
 export const createPlayerService = () => {
   return {
@@ -35,27 +33,23 @@ export const createPlayerService = () => {
         case 'ArrowDown':
           return {
             ...player,
-            isFiring: false,
             top: player.top + yMoveVelocity,
             left: player.left - xMoveVelocity
           }
         case 'ArrowUp':
           return {
             ...player,
-            isFiring: false,
             top: player.top - yMoveVelocity,
             left: player.left + xMoveVelocity
           }
         case 'ArrowLeft':
           return {
             ...player,
-            isFiring: false,
             rotation: player.rotation - rotationVelocity
           }
         case 'ArrowRight':
           return {
             ...player,
-            isFiring: false,
             rotation: player.rotation + rotationVelocity
           }
         case 'Space':
@@ -64,10 +58,7 @@ export const createPlayerService = () => {
             isFiring: true
           }
         default:
-          return {
-            ...player,
-            isFiring: false
-          }
+          return player
       }
     }
   }

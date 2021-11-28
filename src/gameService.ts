@@ -4,21 +4,22 @@ import { Game, GameObject, Player, PlayerAction } from './types'
 import { Server } from 'socket.io'
 import * as geometric from 'geometric'
 import type { Line, Polygon, Point } from 'geometric'
+import { degToRad, round2Points } from './utils'
 
 const gameBoardSize = Number(process.env.GAME_BOARD_SIZE) || 500
 
 const transformGameObjectToPolygon = (object: GameObject): Polygon => {
-  const topLeft: Point = [object.top, object.left]
-  const bottomLeft: Point = [object.top + object.height, object.left]
-  const topRight: Point = [object.top, object.left + object.width]
-  const bottomRight: Point = [object.top + object.height, object.left + object.width]
+  const topLeft: Point = [object.left, object.top]
+  const topRight: Point = [object.left + object.width, object.top]
+  const bottomLeft: Point = [object.left, object.top + object.height]
+  const bottomRight: Point = [object.left + object.width, object.top + object.height]
   const diagonalLine: Line = [topLeft, bottomRight]
 
   const coordinates: Polygon = [
     topLeft,
-    bottomLeft,
     topRight,
-    bottomRight
+    bottomRight,
+    bottomLeft
   ]
 
   const midpoint = geometric.lineMidpoint(diagonalLine)
@@ -28,23 +29,15 @@ const transformGameObjectToPolygon = (object: GameObject): Polygon => {
 export const createGameService = ({ io, gameRepository, playerService }:{ io: Server, gameRepository: GameRepository, playerService: PlayerService }) => {
   return {
     startGameClock ({ gameId }: { gameId: number }) {
+      // @TODO end game
       const clockId = setInterval(() => this.processGameTick({ gameId }), Number(process.env.GAME_TICK_INTERVAL) || 50)
       return clockId
     },
     processGameTick ({ gameId }: { gameId: number }) {
-      const game = this.getGame(gameId)
-      game.players.forEach((playerId) => {
-        const nextAction = game.nextPlayersAction[playerId]
-        const player = game.board.objects.find((object) => object.id === playerId)
-        if (!nextAction || !player) return
-        const updatedPlayer = playerService.processPlayerAction({ player, action: nextAction })
-        this.updatePlayerOnBoard({ updatedPlayer, gameId })
-        const collisionExistAfterUpdate = this.checkIfObjectsCollide(gameId)
-        // revert if collisions exists
-        if (collisionExistAfterUpdate) this.updatePlayerOnBoard({ updatedPlayer: player, gameId })
-        this.removeNextPlayerAction({ playerId })
-        this.emitBoardChangedEvent(gameId)
-      })
+      this.clearFiringStates(gameId)
+      this.processMovements(gameId)
+      this.processDamages(gameId)
+      this.emitBoardChangedEvent(gameId)
     },
     createNewGame ({ startingPlayerConnectionId }: { startingPlayerConnectionId: string }) {
       const newGame = gameRepository.createNewGame({
@@ -136,7 +129,67 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         this.saveNextPlayerAction({ playerId, action })
       }
     },
-    checkIfObjectsCollide (gameId: number): boolean {
+    clearFiringStates (gameId: number) {
+      const game = this.getGame(gameId)
+      const players = game.board.objects.filter((object) => object.type === 'player')
+      const firingPlayers = players.filter((player) => player.isFiring)
+      firingPlayers.forEach((player) => this.updatePlayerOnBoard({
+        updatedPlayer: { ...player, isFiring: false },
+        gameId
+      }))
+    },
+    processMovements (gameId: number) {
+      const game = this.getGame(gameId)
+      game.players.forEach((playerId) => {
+        const nextAction = game.nextPlayersAction[playerId]
+        const player = game.board.objects.find((object) => object.id === playerId)
+        if (!nextAction || !player) return
+        const updatedPlayer = playerService.processPlayerAction({ player, action: nextAction })
+        this.updatePlayerOnBoard({ updatedPlayer, gameId })
+        const collisionExistAfterUpdate = this.checkIfObjectsCollisions(gameId)
+        // revert if collisions exists
+        if (collisionExistAfterUpdate) this.updatePlayerOnBoard({ updatedPlayer: player, gameId })
+        this.removeNextPlayerAction({ playerId })
+      })
+    },
+    processDamages (gameId: number) {
+      const game = this.getGame(gameId)
+      const players = game.board.objects.filter((object) => object.type === 'player')
+      const firingPlayers = players.filter((player) => player.isFiring)
+
+      const shootTrajectories = firingPlayers.map((firingPlayer): Line => {
+        // longer than every dimension the board
+        const shootDistance = 2 * gameBoardSize
+        const firingPlayerPolygon = transformGameObjectToPolygon(firingPlayer)
+        const frontLine: Line = [firingPlayerPolygon[0], firingPlayerPolygon[1]]
+        const barrelPoint = geometric.lineMidpoint(frontLine)
+        // we cant start at barrel as the shoot there would damage firing player itself
+        const shootStartPoint: Point = [
+          barrelPoint[0] + round2Points(Math.sin(degToRad(firingPlayer.rotation)) * 1),
+          barrelPoint[1] - round2Points(Math.cos(degToRad(firingPlayer.rotation)) * 1)
+        ]
+        const shootTargetPoint: Point = [
+          barrelPoint[0] + round2Points(Math.sin(degToRad(firingPlayer.rotation)) * shootDistance),
+          barrelPoint[1] - round2Points(Math.cos(degToRad(firingPlayer.rotation)) * shootDistance)
+        ]
+        return [shootStartPoint, shootTargetPoint]
+      })
+
+      if (shootTrajectories.length === 0) return
+
+      const playersAfterShoots = players.reduce((r, player) => {
+        const playerPolygon = transformGameObjectToPolygon(player)
+        const matchedShootTrajectories = shootTrajectories.filter((shootTrajectory) => geometric.lineIntersectsPolygon(shootTrajectory, playerPolygon))
+        if (matchedShootTrajectories.length === 0) return r
+        return r.concat({
+          ...player,
+          hp: player.hp - matchedShootTrajectories.length
+        })
+      }, [] as Player[])
+
+      playersAfterShoots.forEach((playerAfterShoot) => this.updatePlayerOnBoard({ updatedPlayer: playerAfterShoot, gameId }))
+    },
+    checkIfObjectsCollisions (gameId: number): boolean {
       const game = this.getGame(gameId)
 
       // lines are moved 1px to not provide intersections when object is on the edge of board
