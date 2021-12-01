@@ -4,9 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node ./src/server.ts",
-    "start:prod": "npm run build && node ./dist/src/server.js",
-    "build": "npx tsc",
+    "start": "npm run build && node ./dist/server.js",
+    "build": "npx tsc --outDir dist",
     "dev": "nodemon",
     "lint": "eslint --ext .js,.jsx,.ts,.tsx",
     "fix": "eslint --fix --ext .js,.jsx,.ts,.tsx",
