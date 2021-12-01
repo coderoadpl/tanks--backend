@@ -7,28 +7,36 @@ const store: Store = {
 
 export const createGameRepository = () => {
   return {
-    createNewGame (newGame: Omit<Game, 'id'>): Game {
+    createNewGame ({ newGameData }: { newGameData: Omit<Game, 'id'> }): Game {
       const gameId = store.nextGameId
       store.nextGameId = store.nextGameId + 1
-      store.games[gameId] = { ...newGame, id: gameId }
-      return store.games[gameId]
+      const newGame = { ...newGameData, id: gameId }
+      store.games = store.games.concat(newGame)
+      console.log('createNewGame', store.games)
+      return newGame
     },
-    getGame (gameId: number) {
-      const game = store.games[gameId]
-      console.log(store.games)
-      return { ...game, id: gameId }
+    getGame ({ gameId } : {gameId: number}) {
+      const game = store.games.find((game) => game.id === gameId)
+      return game
     },
-    updateGame (gameId: number, updateBody: Partial<Game>) {
-      const updatedGame = {
-        ...store.games[gameId],
-        ...updateBody
-      }
-      store.games[gameId] = updatedGame
-      console.log(store.games)
-      return updatedGame
+    updateGame ({ gameId, updateBody }: {gameId: number, updateBody: Partial<Game>}) {
+      store.games = store.games.map((game) => {
+        if (game.id !== gameId) return game
+        return {
+          ...game,
+          ...updateBody
+        }
+      })
+      return this.getGame({ gameId })
     },
-    getGameByPlayerId (playerId: string) {
+    getGameByPlayerId ({ playerId }: { playerId: string }) {
       return store.games.find((game) => game.players.includes(playerId))
+    },
+    deleteGame ({ gameId }: {gameId: number}) {
+      const gamesWithoutDeletedOne = store.games.filter((game) => game.id !== gameId)
+      store.games = gamesWithoutDeletedOne
+      console.log('deleteGame', store.games)
+      return gamesWithoutDeletedOne
     }
   }
 }

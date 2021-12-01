@@ -36,7 +36,9 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
       return clockId
     },
     clearGameClock ({ gameId }: { gameId: number }) {
+      // @TODO do not get game every time
       const game = this.getGame(gameId)
+      if (!game) return
       const clockId = game.clockId
       if (clockId) clearInterval(clockId)
     },
@@ -47,99 +49,124 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
       const { shouldEnd: shouldEndByTime } = this.processGameTime({ gameId })
       this.emitBoardChangedEvent({ gameId })
       if (shouldEndByDamages || shouldEndByTime) {
-        this.emitGameEndedEvent({ gameId })
         this.clearGameClock({ gameId })
+        this.emitGameEndedEvent({ gameId })
+        this.deleteGame({ gameId })
       }
+    },
+    deleteGame ({ gameId }: { gameId: number }) {
+      return gameRepository.deleteGame({ gameId })
     },
     createNewGame ({ startingPlayerConnectionId }: { startingPlayerConnectionId: string }) {
       const newGame = gameRepository.createNewGame({
-        players: [startingPlayerConnectionId],
-        nextPlayersAction: {},
-        board: {
-          dimensions: {
-            x: gameBoardSize,
-            y: gameBoardSize
-          },
-          time: gameTime,
-          endTime: gameEndTime,
-          objects: [playerService.makePlayer({
-            playerId: startingPlayerConnectionId,
-            top: playerInvariantProperties.width / 2,
-            left: playerInvariantProperties.height / 2,
-            rotation: 180
-          })]
+        newGameData: {
+          players: [startingPlayerConnectionId],
+          nextPlayersAction: {},
+          board: {
+            dimensions: {
+              x: gameBoardSize,
+              y: gameBoardSize
+            },
+            time: gameTime,
+            endTime: gameEndTime,
+            objects: [playerService.makePlayer({
+              playerId: startingPlayerConnectionId,
+              top: playerInvariantProperties.width / 2,
+              left: playerInvariantProperties.height / 2,
+              rotation: 180
+            })]
+          }
         }
       })
       const clockId = this.startGameClock({ gameId: newGame.id })
       const updatedGame = this.updateGame(newGame.id, { clockId })
-      return updatedGame
+      return updatedGame as Game
     },
     getGame (gameId: number) {
-      return gameRepository.getGame(gameId)
+      return gameRepository.getGame({ gameId })
     },
     updateGame (gameId: number, updateBody: Partial<Game>) {
-      return gameRepository.updateGame(gameId, updateBody)
+      return gameRepository.updateGame({ gameId, updateBody })
     },
     addPlayerToTheGame ({ playerId, gameId }: {playerId: string, gameId: number}) {
       const game = this.getGame(gameId)
-      return gameRepository.updateGame(gameId, {
-        players: game.players.concat(playerId),
-        board: {
-          ...game.board,
-          objects: game.board.objects.concat(playerService.makePlayer({
-            playerId,
-            rotation: 0,
-            top: game.board.dimensions.y - playerInvariantProperties.height - playerInvariantProperties.width / 2,
-            left: game.board.dimensions.x - playerInvariantProperties.width - playerInvariantProperties.height / 2
-          }))
+      if (!game) return
+      return gameRepository.updateGame({
+        gameId,
+        updateBody: {
+          players: game.players.concat(playerId),
+          board: {
+            ...game.board,
+            objects: game.board.objects.concat(playerService.makePlayer({
+              playerId,
+              rotation: 0,
+              top: game.board.dimensions.y - playerInvariantProperties.height - playerInvariantProperties.width / 2,
+              left: game.board.dimensions.x - playerInvariantProperties.width - playerInvariantProperties.height / 2
+            }))
+          }
         }
       })
     },
     updatePlayerOnBoard ({ updatedPlayer, gameId }: {updatedPlayer: Player, gameId: number}) {
       const game = this.getGame(gameId)
-      return gameRepository.updateGame(gameId, {
-        board: {
-          ...game.board,
-          objects: game.board.objects.map((object) => {
-            if (object.type !== 'player' || object.id !== updatedPlayer.id) return object
-            return updatedPlayer
-          })
+      if (!game) return
+      return gameRepository.updateGame({
+        gameId,
+        updateBody: {
+          board: {
+            ...game.board,
+            objects: game.board.objects.map((object) => {
+              if (object.type !== 'player' || object.id !== updatedPlayer.id) return object
+              return updatedPlayer
+            })
+          }
         }
       })
     },
     increaseGameTime ({ gameId }: { gameId: number}) {
       const game = this.getGame(gameId)
-      return gameRepository.updateGame(gameId, {
-        board: {
-          ...game.board,
-          time: game.board.time + gameTickInterval
+      if (!game) return
+      return gameRepository.updateGame({
+        gameId,
+        updateBody: {
+          board: {
+            ...game.board,
+            time: game.board.time + gameTickInterval
+          }
         }
       })
     },
     saveNextPlayerAction ({ playerId, action }: { playerId: string, action: PlayerAction }) {
-      const game = gameRepository.getGameByPlayerId(playerId)
+      const game = gameRepository.getGameByPlayerId({ playerId })
       if (!game) return
-      return gameRepository.updateGame(game.id, {
-        ...game,
-        nextPlayersAction: {
-          ...game.nextPlayersAction,
-          [playerId]: action
+      return gameRepository.updateGame({
+        gameId: game.id,
+        updateBody: {
+          ...game,
+          nextPlayersAction: {
+            ...game.nextPlayersAction,
+            [playerId]: action
+          }
         }
       })
     },
     removeNextPlayerAction ({ playerId }: { playerId: string }) {
-      const game = gameRepository.getGameByPlayerId(playerId)
+      const game = gameRepository.getGameByPlayerId({ playerId })
       if (!game) return
-      return gameRepository.updateGame(game.id, {
-        ...game,
-        nextPlayersAction: {
-          ...game.nextPlayersAction,
-          [playerId]: null
+      return gameRepository.updateGame({
+        gameId: game.id,
+        updateBody: {
+          ...game,
+          nextPlayersAction: {
+            ...game.nextPlayersAction,
+            [playerId]: null
+          }
         }
       })
     },
     emitBoardChangedEvent ({ gameId }: { gameId: number }) {
       const game = this.getGame(gameId)
+      if (!game) return
       game.players.forEach((playerId) => {
         const playerSocket = io.sockets.sockets.get(playerId)
         if (playerSocket) playerSocket.emit('BOARD_CHANGED', game.board)
@@ -147,13 +174,14 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
     },
     emitGameEndedEvent ({ gameId }: { gameId: number }) {
       const game = this.getGame(gameId)
+      if (!game) return
       game.players.forEach((playerId) => {
         const playerSocket = io.sockets.sockets.get(playerId)
         if (playerSocket) playerSocket.emit('GAME_ENDED')
       })
     },
     handlePlayerAction ({ playerId, action }: { playerId: string, action: PlayerAction }) {
-      const game = gameRepository.getGameByPlayerId(playerId)
+      const game = gameRepository.getGameByPlayerId({ playerId })
       if (!game) return
       if (action.eventName === 'keydown') {
         this.saveNextPlayerAction({ playerId, action })
@@ -161,6 +189,7 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
     },
     clearFiringStates (gameId: number) {
       const game = this.getGame(gameId)
+      if (!game) return
       const players = game.board.objects.filter((object) => object.type === 'player')
       const firingPlayers = players.filter((player) => player.isFiring)
       firingPlayers.forEach((player) => this.updatePlayerOnBoard({
@@ -168,9 +197,10 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         gameId
       }))
     },
-    processGameTime ({ gameId }: { gameId: number }) {
+    processGameTime ({ gameId }: { gameId: number }): { shouldEnd: boolean } {
       this.increaseGameTime({ gameId })
       const game = this.getGame(gameId)
+      if (!game) return { shouldEnd: false }
       if (game.board.time >= game.board.endTime) {
         return { shouldEnd: true }
       }
@@ -178,6 +208,7 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
     },
     processMovements (gameId: number) {
       const game = this.getGame(gameId)
+      if (!game) return
       game.players.forEach((playerId) => {
         const nextAction = game.nextPlayersAction[playerId]
         const player = game.board.objects.find((object) => object.id === playerId)
@@ -190,9 +221,14 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         this.removeNextPlayerAction({ playerId })
       })
     },
-    processDamages (gameId: number) {
+    processDamages (gameId: number): { shouldEnd: boolean } {
       const game = this.getGame(gameId)
+      if (!game) return { shouldEnd: false }
       const players = game.board.objects.filter((object) => object.type === 'player')
+
+      // one player cant kill himself
+      if (players.length === 1) return { shouldEnd: false }
+
       const firingPlayers = players.filter((player) => player.isFiring)
 
       const shootTrajectories = firingPlayers.map((firingPlayer): Line => {
@@ -235,6 +271,7 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
     },
     checkIfObjectsCollisions (gameId: number): boolean {
       const game = this.getGame(gameId)
+      if (!game) return false
 
       // lines are moved 1px to not provide intersections when object is on the edge of board
       const borderLeft: Line = [[-1, -1], [-1, gameBoardSize + 1]]

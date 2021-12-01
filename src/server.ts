@@ -37,7 +37,7 @@ app.post('/join', (req, res) => {
     res.status(404).json({ error: 'This is not a valid game id!' })
     return
   }
-  const game = gameRepository.getGame(gameId)
+  const game = gameRepository.getGame({ gameId })
   if (!game) {
     res.status(404).json({ error: 'This game do not exists!' })
     return
