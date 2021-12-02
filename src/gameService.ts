@@ -36,16 +36,15 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
       return clockId
     },
     clearGameClock ({ gameId }: { gameId: number }) {
-      // @TODO do not get game every time
-      const game = this.getGame(gameId)
+      const game = gameRepository.getGame({ gameId })
       if (!game) return
       const clockId = game.clockId
       if (clockId) clearInterval(clockId)
     },
     processGameTick ({ gameId }: { gameId: number }) {
-      this.clearFiringStates(gameId)
-      this.processMovements(gameId)
-      const { shouldEnd: shouldEndByDamages } = this.processDamages(gameId)
+      this.clearFiringStates({ gameId })
+      this.processMovements({ gameId })
+      const { shouldEnd: shouldEndByDamages } = this.processDamages({ gameId })
       const { shouldEnd: shouldEndByTime } = this.processGameTime({ gameId })
       this.emitBoardChangedEvent({ gameId })
       if (shouldEndByDamages || shouldEndByTime) {
@@ -79,17 +78,11 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         }
       })
       const clockId = this.startGameClock({ gameId: newGame.id })
-      const updatedGame = this.updateGame(newGame.id, { clockId })
+      const updatedGame = gameRepository.updateGame({ gameId: newGame.id, updateBody: { clockId } })
       return updatedGame as Game
     },
-    getGame (gameId: number) {
-      return gameRepository.getGame({ gameId })
-    },
-    updateGame (gameId: number, updateBody: Partial<Game>) {
-      return gameRepository.updateGame({ gameId, updateBody })
-    },
     addPlayerToTheGame ({ playerId, gameId }: {playerId: string, gameId: number}) {
-      const game = this.getGame(gameId)
+      const game = gameRepository.getGame({ gameId })
       if (!game) return
       return gameRepository.updateGame({
         gameId,
@@ -108,7 +101,7 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
       })
     },
     updatePlayerOnBoard ({ updatedPlayer, gameId }: {updatedPlayer: Player, gameId: number}) {
-      const game = this.getGame(gameId)
+      const game = gameRepository.getGame({ gameId })
       if (!game) return
       return gameRepository.updateGame({
         gameId,
@@ -124,7 +117,7 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
       })
     },
     increaseGameTime ({ gameId }: { gameId: number}) {
-      const game = this.getGame(gameId)
+      const game = gameRepository.getGame({ gameId })
       if (!game) return
       return gameRepository.updateGame({
         gameId,
@@ -165,7 +158,7 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
       })
     },
     emitBoardChangedEvent ({ gameId }: { gameId: number }) {
-      const game = this.getGame(gameId)
+      const game = gameRepository.getGame({ gameId })
       if (!game) return
       game.players.forEach((playerId) => {
         const playerSocket = io.sockets.sockets.get(playerId)
@@ -173,7 +166,7 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
       })
     },
     emitGameEndedEvent ({ gameId }: { gameId: number }) {
-      const game = this.getGame(gameId)
+      const game = gameRepository.getGame({ gameId })
       if (!game) return
       game.players.forEach((playerId) => {
         const playerSocket = io.sockets.sockets.get(playerId)
@@ -187,8 +180,8 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         this.saveNextPlayerAction({ playerId, action })
       }
     },
-    clearFiringStates (gameId: number) {
-      const game = this.getGame(gameId)
+    clearFiringStates ({ gameId }: { gameId: number }) {
+      const game = gameRepository.getGame({ gameId })
       if (!game) return
       const players = game.board.objects.filter((object) => object.type === 'player')
       const firingPlayers = players.filter((player) => player.isFiring)
@@ -199,15 +192,15 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
     },
     processGameTime ({ gameId }: { gameId: number }): { shouldEnd: boolean } {
       this.increaseGameTime({ gameId })
-      const game = this.getGame(gameId)
+      const game = gameRepository.getGame({ gameId })
       if (!game) return { shouldEnd: false }
       if (game.board.time >= game.board.endTime) {
         return { shouldEnd: true }
       }
       return { shouldEnd: false }
     },
-    processMovements (gameId: number) {
-      const game = this.getGame(gameId)
+    processMovements ({ gameId }: { gameId: number }) {
+      const game = gameRepository.getGame({ gameId })
       if (!game) return
       game.players.forEach((playerId) => {
         const nextAction = game.nextPlayersAction[playerId]
@@ -215,14 +208,14 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
         if (!nextAction || !player) return
         const updatedPlayer = playerService.processPlayerAction({ player, action: nextAction })
         this.updatePlayerOnBoard({ updatedPlayer, gameId })
-        const collisionExistAfterUpdate = this.checkIfObjectsCollisions(gameId)
+        const collisionExistAfterUpdate = this.checkIfObjectsCollisions({ gameId })
         // revert if collisions exists
         if (collisionExistAfterUpdate) this.updatePlayerOnBoard({ updatedPlayer: player, gameId })
         this.removeNextPlayerAction({ playerId })
       })
     },
-    processDamages (gameId: number): { shouldEnd: boolean } {
-      const game = this.getGame(gameId)
+    processDamages ({ gameId }: { gameId: number }): { shouldEnd: boolean } {
+      const game = gameRepository.getGame({ gameId })
       if (!game) return { shouldEnd: false }
       const players = game.board.objects.filter((object) => object.type === 'player')
 
@@ -269,8 +262,8 @@ export const createGameService = ({ io, gameRepository, playerService }:{ io: Se
 
       return { shouldEnd: isOnePlayerLeft }
     },
-    checkIfObjectsCollisions (gameId: number): boolean {
-      const game = this.getGame(gameId)
+    checkIfObjectsCollisions ({ gameId }: { gameId: number }): boolean {
+      const game = gameRepository.getGame({ gameId })
       if (!game) return false
 
       // lines are moved 1px to not provide intersections when object is on the edge of board

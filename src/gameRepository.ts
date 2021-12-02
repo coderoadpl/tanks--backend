@@ -1,11 +1,6 @@
 import { Game, Store } from './types'
 
-const store: Store = {
-  nextGameId: 0,
-  games: []
-}
-
-export const createGameRepository = () => {
+export const createGameRepository = ({ store }: { store: Store }) => {
   return {
     createNewGame ({ newGameData }: { newGameData: Omit<Game, 'id'> }): Game {
       const gameId = store.nextGameId

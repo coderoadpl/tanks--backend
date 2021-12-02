@@ -6,6 +6,7 @@ import { Server } from 'socket.io'
 import { createGameRepository } from './gameRepository'
 import { createGameService } from './gameService'
 import { createPlayerService } from './playerService'
+import { createStore } from './store'
 
 dotenv.config()
 
@@ -18,7 +19,9 @@ app.use(express.json())
 const httpServer = createServer(app)
 const io = new Server(httpServer, { cors: { origin: '*' } })
 
-const gameRepository = createGameRepository()
+const store = createStore()
+
+const gameRepository = createGameRepository({ store })
 const playerService = createPlayerService()
 const gameService = createGameService({ io, gameRepository, playerService })
 
